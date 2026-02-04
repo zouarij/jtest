@@ -1,0 +1,30 @@
+import groovy.json.JsonSlurper
+
+def responseText = prev.getResponseDataAsString()
+if (!responseText) {
+    prev.setSuccessful(false)
+    prev.setResponseMessage("Empty response")
+    return
+}
+
+def json = new JsonSlurper().parseText(responseText)
+
+def responseContent = null
+if (json?.messages instanceof List) {
+    def found = json.messages.find { it?.title?.toString()?.toUpperCase()?.contains("ZEMBRA") }
+    if (found) {
+        responseContent = found.title ?: found.content
+    }
+}
+
+if (!responseContent) {
+    responseContent = json?.messageInformation?.messageName
+}
+
+vars.put("ZembraMessage", responseContent ?: "")
+
+if (!vars.get("ZembraMessage")) {
+    prev.setSuccessful(false)
+    prev.setResponseMessage("Zembra Message is null or empty.")
+    log.error("ZembraMessage not found in response.")
+}
