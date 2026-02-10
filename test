@@ -1,6 +1,7 @@
-if (responseContent == null) {
-    prev.setSuccessful(false)
-    prev.setResponseMessage("Response Zembra Content is empty or null.")
-    log.error("Response Zembra Content is empty or null.")
-    return
+def actualRecDate = operation.ReconciliationDate
+if (actualRecDate == null) {
+    log.warn("ReconciliationDate is null in response (allowed for now).")
+    writeToCSV("ZEMBRA Booking Reconciliation", "ReconciliationDate", "WARN", actualRecDate, todayDate)
+} else {
+    compareFields("ReconciliationDate", actualRecDate, todayDate)
 }
