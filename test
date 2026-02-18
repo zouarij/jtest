@@ -1,7 +1,63 @@
-def actualRecDate = operation.ReconciliationDate
-if (actualRecDate == null) {
-    log.warn("ReconciliationDate is null in response (allowed for now).")
-    writeToCSV("ZEMBRA Booking Reconciliation", "ReconciliationDate", "WARN", actualRecDate, todayDate)
-} else {
-    compareFields("ReconciliationDate", actualRecDate, todayDate)
+Here you go — JSR223 PreProcessor (Groovy) code that loads a JSON file from the already-loaded pacsFileData map (same mechanism as ${pacs008messageSent}), stores it in a JMeter variable, and optionally resolves ${vars} inside the JSON.
+Paste this into your JSR223 PreProcessor (Language: groovy) attached to the HTTP Request.
+// JSR223 PreProcessor (Groovy)
+// Loads JSON content from scenario files (props["pacsFileData"])
+// and stores it into a JMeter variable for HTTP Body usage.
+//
+// Usage in HTTP Body Data: ${jsonMessageSent}
+
+def pacsFileData = props.get("pacsFileData")
+if (pacsFileData == null) {
+    throw new IllegalStateException("pacsFileData is null. Make sure 'Read Pacs Files' runs before this sampler.")
 }
+
+// Change this to your JSON filename inside the scenario folder
+def fileName = vars.get("jsonFileName") ?: "2_request.json"
+
+def jsonTemplate = pacsFileData.get(fileName)
+if (jsonTemplate == null) {
+    throw new IllegalStateException("JSON file not found in pacsFileData: " + fileName)
+}
+
+// OPTIONAL: resolve any JMeter variables inside the JSON like ${amount}, ${currency}, ...
+// If you don't need it, you can skip these 2 lines and just vars.put("jsonMessageSent", jsonTemplate)
+def resolvedJson = org.apache.jmeter.engine.util.CompoundVariable
+        .newInstance(jsonTemplate)
+        .execute()
+
+// Store result in a variable (same style as pacs008messageSent)
+vars.put("jsonMessageSent", resolvedJson)
+
+// Optional debug log
+log.info("Loaded JSON request from " + fileName + " into \${jsonMessageSent}")
+
+How to use it
+
+
+Put your JSON file in the scenario folder (same folder as 0_content.json), e.g. 2_request.json
+
+
+In the HTTP Request → Body Data put:
+
+
+${jsonMessageSent}
+
+
+
+Add HTTP Header Manager:
+
+
+
+
+Content-Type: application/json
+
+
+(optional) Authorization: Bearer ${token}
+
+
+
+
+Add Response Assertion → Response Code equals 200
+
+
+If you want the variable name to match the old style exactly (like pacs008messageSent), tell me what name you prefer and I’ll adjust it.
