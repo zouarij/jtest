@@ -1,9 +1,16 @@
-def raw = vars.get('businessid')
-if (raw == null) {
-    log.error('businessid is null -> extractor failed')
-} else {
-    // remove normal + smart quotes and trim spaces
-    def clean = raw.replaceAll('[\"«»“”]', '').trim()
-    vars.put('businessid', clean)
-    log.info("businessid raw=${raw} | clean=${clean}")
+for (AssertionResult assertion : assertionResults) {
+    def name = String.valueOf(assertion.getName())
+    def msg  = String.valueOf(assertion.getFailureMessage())  // safe even if null
+
+    if (assertion.isFailure()) {
+        failedAssertions.add("FAIL : " + name + " : " + msg)
+    } else {
+        passedAssertions.add("PASS : " + name)
+    }
+}
+
+
+
+if (assertionResults == null || assertionResults.isEmpty()) {
+    failedAssertions.add("No assertions found.")
 }
