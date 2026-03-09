@@ -1,30 +1,53 @@
-sed -i '171s/.*/    while IFS=: read -r existing_user start size; do/' podman.sh
+Safest way: do not edit the file directly first.
+First back it up, then make the smallest possible change, and only if you have permission.
 
-Now verify:
+1. Back up both files
 
-sed -n '168,174p' podman.sh
+Run:
 
-It should become:
-
-if ! grep -q "^$user:" /etc/subuid; then
-    # Find the next free slot by reading the highest existing end-point
-    local max_end=$base
-    while IFS=: read -r existing_user start size; do
-        local end=$(( start + size ))
-        (( end > max_end )) && max_end=$end
-    done < /etc/subuid
-
-Then run again:
-
-sudo ./podman.sh --auth ssh --storage-path /opt/containerd mzouari_su
-
-If it still fails, do this to inspect the real content of /etc/subuid:
-
+sudo cp /etc/subuid /etc/subuid.bak_$(date +%F_%H%M%S)
+sudo cp /etc/subgid /etc/subgid.bak_$(date +%F_%H%M%S)
+2. Check the current bad lines
 cat /etc/subuid
+cat /etc/subgid
 
-From your screenshot, the important thing is: fix line 171 first.
-sed -i '171s/.*/    while IFS=: read -r _ start size; do/' podman.sh
+From your screenshot, the bad pattern is:
 
-Then verify:
+hbensaad_su:hbensaad_su0000:65536
 
-sed -n '168,174p' podman.sh
+The middle field must be a number.
+
+3. Safest correction: fix only the malformed entry
+
+Since the script is crashing on that exact line, the minimal correction is to replace only the broken second field with a numeric start range.
+
+For /etc/subuid:
+
+sudo sed -i 's/^hbensaad_su:hbensaad_su0000:65536$/hbensaad_su:200000:65536/' /etc/subuid
+
+For /etc/subgid only if it has the same bad line:
+
+sudo sed -i 's/^hbensaad_su:hbensaad_su0000:65536$/hbensaad_su:200000:65536/' /etc/subgid
+4. Verify before doing anything else
+cat /etc/subuid
+cat /etc/subgid
+
+You want to see a numeric middle field, like:
+
+sat_exec:100000:65536
+hbensaad_su:200000:65536
+5. Re-run the script
+sudo ./podman.sh --auth ssh --storage-path /opt/containerd mzouari_su
+6. If anything goes wrong, restore immediately
+sudo cp /etc/subuid.bak_YYYY-MM-DD_HHMMSS /etc/subuid
+sudo cp /etc/subgid.bak_YYYY-MM-DD_HHMMSS /etc/subgid
+
+Use the exact backup filenames created in step 1.
+
+Better than direct editing
+
+If you want the most conservative approach, send your teammate/admin this exact note:
+
+The script fails at subuid allocation because /etc/subuid contains hbensaad_su:hbensaad_su0000:65536, where the second field is non-numeric. I can fix it after backup, but I want confirmation before changing system-managed files.
+
+If you want, send me the output of cat /etc/subgid too, because it should usually be corrected in both files the same way.
