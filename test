@@ -23,3 +23,8 @@ If it still fails, do this to inspect the real content of /etc/subuid:
 cat /etc/subuid
 
 From your screenshot, the important thing is: fix line 171 first.
+sed -i '171s/.*/    while IFS=: read -r _ start size; do/' podman.sh
+
+Then verify:
+
+sed -n '168,174p' podman.sh
