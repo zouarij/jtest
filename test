@@ -1,48 +1,25 @@
-Nachgedacht für 28s
+sed -i '171s/.*/    while IFS=: read -r existing_user start size; do/' podman.sh
 
-Yes — the screenshot shows the real bug.
-
-/etc/subuid has 3 fields per line:
-
-username:start:size
-
-But your script loop is reading it wrong, so start becomes the username (hbensaad_su0000), and then line 172 tries to calculate with it.
-
-That is why you get:
-
-hbensaad_su0000: unbound variable
-Fix line 171
-
-Run this to display the exact current line:
-
-sed -n '171p' podman.sh
-
-It should be something like:
-
-while IFS=: read -r start size; do
-
-It must be changed to:
-
-while IFS=: read -r existing_user start size; do
-Fast fix with one command
-
-Run:
-
-sed -i 's/while IFS=: read -r start size; do/while IFS=: read -r existing_user start size; do/' podman.sh
-
-Then check:
+Now verify:
 
 sed -n '168,174p' podman.sh
 
-You should now see:
+It should become:
 
 if ! grep -q "^$user:" /etc/subuid; then
-  local max_end=$base
-  while IFS=: read -r existing_user start size; do
-    local end=$(( start + size ))
-    (( end > max_end )) && max_end=$end
-  done < /etc/subuid
-Then rerun the script
+    # Find the next free slot by reading the highest existing end-point
+    local max_end=$base
+    while IFS=: read -r existing_user start size; do
+        local end=$(( start + size ))
+        (( end > max_end )) && max_end=$end
+    done < /etc/subuid
+
+Then run again:
+
 sudo ./podman.sh --auth ssh --storage-path /opt/containerd mzouari_su
 
-If it fails again, send the next screenshot from the terminal.
+If it still fails, do this to inspect the real content of /etc/subuid:
+
+cat /etc/subuid
+
+From your screenshot, the important thing is: fix line 171 first.
