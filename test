@@ -1,159 +1,48 @@
-Got you. Since the API can’t filter by blockingReasons / thirdParties in where, we’ll do it inside JMeter:
+Nachgedacht für 28s
 
-Request take: 10 (or more)
+Yes — the screenshot shows the real bug.
 
-In JMeter: keep only accounts where
-blockingReasons is empty AND thirdParties is not empty
+/etc/subuid has 3 fields per line:
 
-Pick 1 random from the filtered list
+username:start:size
 
-Save its fields into JMeter variables to build your outgoing JSON
+But your script loop is reading it wrong, so start becomes the username (hbensaad_su0000), and then line 172 tries to calculate with it.
 
-And if none match? We handle it cleanly: retry with another page / bigger take, up to a max.
+That is why you get:
 
-✅ JMeter Plan (simple + robust)
-1) GraphQL HTTP Request
+hbensaad_su0000: unbound variable
+Fix line 171
 
-Body example (keep your existing where filters, just add a bigger take if possible):
+Run this to display the exact current line:
 
-{
-  "query": "query ACCOUNTS { accounts(where:{ closingDate:{eq:null} currency:{eq:\"EUR\"} businessLineCode:{nin:[\"ODO\",\"OAM\",\"OCF\"]}}, take: 50) { items { accountNumber iban bban currency blockingReasons { id } thirdParties { thirdPartyCode bban } } } }"
-}
+sed -n '171p' podman.sh
 
-Start with take: 50 instead of 10. Still lightweight, and increases chance.
+It should be something like:
 
-2) JSON Extractor (optional)
+while IFS=: read -r start size; do
 
-You can skip JSON Extractor because we’ll parse everything in one script, but if you want:
+It must be changed to:
 
-Extract whole response into ${accountsResponse} using “Save Responses to a variable” (or just use prev.getResponseDataAsString() inside Groovy).
+while IFS=: read -r existing_user start size; do
+Fast fix with one command
 
-3) JSR223 PostProcessor (Groovy) ✅ (filters + random pick)
+Run:
 
-Add JSR223 PostProcessor under the GraphQL request:
+sed -i 's/while IFS=: read -r start size; do/while IFS=: read -r existing_user start size; do/' podman.sh
 
-Language: groovy
+Then check:
 
-Paste this:
+sed -n '168,174p' podman.sh
 
-import groovy.json.JsonSlurper
-import java.util.concurrent.ThreadLocalRandom
+You should now see:
 
-def res = prev.getResponseDataAsString()
-def json = new JsonSlurper().parseText(res)
+if ! grep -q "^$user:" /etc/subuid; then
+  local max_end=$base
+  while IFS=: read -r existing_user start size; do
+    local end=$(( start + size ))
+    (( end > max_end )) && max_end=$end
+  done < /etc/subuid
+Then rerun the script
+sudo ./podman.sh --auth ssh --storage-path /opt/containerd mzouari_su
 
-// adjust path if your response shape differs
-def items = json?.data?.accounts?.items
-if (!items) {
-    vars.put("ACC_FOUND", "0")
-    vars.put("ACC_ERR", "No items in response")
-    return
-}
-
-// keep only: blockingReasons empty AND thirdParties not empty
-def filtered = items.findAll { acc ->
-    def br = acc?.blockingReasons
-    def tp = acc?.thirdParties
-    (br == null || br.size() == 0) && (tp != null && tp.size() > 0)
-}
-
-if (filtered.size() == 0) {
-    vars.put("ACC_FOUND", "0")
-    vars.put("ACC_ERR", "No matching account in this batch")
-    return
-}
-
-// pick random account
-def idx = ThreadLocalRandom.current().nextInt(filtered.size())
-def pick = filtered[idx]
-
-// pick random thirdParty from that account (since tp not empty)
-def tpIdx = ThreadLocalRandom.current().nextInt(pick.thirdParties.size())
-def pickTp = pick.thirdParties[tpIdx]
-
-// Save variables for later requests/templates
-vars.put("ACC_FOUND", "1")
-vars.put("ACC_ERR", "")
-vars.put("ACC_ACCOUNT_NUMBER", String.valueOf(pick.accountNumber ?: ""))
-vars.put("ACC_IBAN", String.valueOf(pick.iban ?: ""))
-vars.put("ACC_BBAN", String.valueOf(pick.bban ?: ""))
-vars.put("ACC_CCY", String.valueOf(pick.currency ?: ""))
-
-vars.put("ACC_TP_CODE", String.valueOf(pickTp.thirdPartyCode ?: ""))
-vars.put("ACC_TP_BBAN", String.valueOf(pickTp.bban ?: ""))
-
-log.info("Selected account: ${vars.get('ACC_IBAN')} | TP: ${vars.get('ACC_TP_CODE')}")
-
-Now you have variables like:
-
-${ACC_IBAN}
-
-${ACC_ACCOUNT_NUMBER}
-
-${ACC_TP_CODE} …
-
-4) What if the 10 / 50 results don’t contain any matching account?
-
-We do retry automatically.
-
-Add:
-
-a While Controller (or Loop Controller with a max)
-
-Inside it: the GraphQL request + that PostProcessor
-
-Stop when ${ACC_FOUND} becomes 1
-
-While Controller condition:
-${__groovy(vars.get('ACC_FOUND') != '1' && (vars.get('ACC_TRY') as int) < 5)}
-Add a JSR223 Sampler (before the request) to increment tries:
-def t = (vars.get("ACC_TRY") ?: "0") as int
-vars.put("ACC_TRY", String.valueOf(t + 1))
-Add a Constant Timer (optional)
-
-200–500 ms between retries to not spam.
-
-If after 5 tries still none:
-
-Add an If Controller after the loop:
-Condition:
-
-${ACC_FOUND} != 1
-
-Inside it:
-
-JSR223 Sampler that does: AssertionResult.setFailure(true) or just logs error + Stop Thread.
-
-Simplest: add JSR223 Sampler:
-
-if (vars.get("ACC_FOUND") != "1") {
-    AssertionResult.setFailure(true)
-    AssertionResult.setFailureMessage("No account found after retries. Last error: " + vars.get("ACC_ERR"))
-}
-5) “Random take 10” vs “take 10 random”
-
-GraphQL take is usually “first N”, not random.
-To make it random-ish, use one of these if your API supports it:
-
-skip: <random> + take: 10
-
-or orderBy: RANDOM
-
-If you don’t have skip / orderBy, you still get randomness by:
-
-picking random inside the batch ✅
-
-using retries (each request may return different data depending on backend)
-
-If your schema supports skip, tell me and I’ll give you the exact JMeter random skip snippet.
-
-Next: Replace values in the JSON you send
-
-Once vars are set, your outgoing request JSON can use:
-
-{
-  "debtorIban": "${ACC_IBAN}",
-  "creditorThirdPartyCode": "${ACC_TP_CODE}"
-}
-
-If you send me one sample response JSON (just anonymize iban), I’ll adjust the exact path (data.accounts.items etc.) so it works 100% with your real payload.
+If it fails again, send the next screenshot from the terminal.
