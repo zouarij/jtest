@@ -1,1 +1,3 @@
-ssh -i C:\Users\MZOUARI\.ssh\id_ed25519 mzouari_su@ZAPPLUSAL0001
+podman --remote system connection add oddo `
+--identity "C:\Users\MZOUARI\.ssh\id_ed25519" `
+ssh://mzouari_su@zapplusal0001/run/user/894762388/podman/podman.sock
