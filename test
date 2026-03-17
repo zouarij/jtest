@@ -1,3 +1,17 @@
-podman --remote system connection add oddo `
---identity "C:\Users\MZOUARI\.ssh\id_ed25519" `
-ssh://mzouari_su@zapplusal0001/run/user/894762388/podman/podman.sock
+import groovy.json.JsonSlurper
+
+def requestBody = vars.get("jsonMessageSent")
+
+if (requestBody == null || requestBody.trim().isEmpty()) {
+    throw new Exception("jsonMessageSent is empty or null")
+}
+
+def json = new JsonSlurper().parseText(requestBody)
+def cdtrNm = json.creditor?.name
+
+if (cdtrNm != null) {
+    vars.put("cdtrNm", cdtrNm.toString())
+    log.info("Extracted creditor name: " + cdtrNm)
+} else {
+    log.warn("creditor.name not found in jsonMessageSent")
+}
